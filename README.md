@@ -295,6 +295,33 @@ npm run dashboard        # local engine + dashboard at http://127.0.0.1:8787
 
 Tests: `npm test` (dashboard server and progress parsing).
 
+## Publishing to Vercel
+
+The website's **Generated videos** library shows only courses you have published. Publishing is
+explicit and manual; building a course never uploads anything.
+
+What is stored (Vercel Blob, **public**: anyone with a link can watch):
+`courses/<slug>/final-video.mp4`, `thumbnail.jpg`, `captions.vtt`, `captions.srt`, `transcript.txt`,
+plus `library/catalog.json`. Source PPTX/DOCX, `presentation.pptx`, `voiceover-script.docx`, audio,
+slides, segments, `qa/`, `checkpoint.json` and `.env` are never uploaded.
+
+```bash
+npm run publish-course                               # list local courses (and publish status if a token is set)
+npm run publish-course -- <slug>                     # DRY RUN: shows exactly which files would be uploaded
+npm run publish-course -- <slug> --yes               # approve and upload
+npm run publish-course -- --unpublish <slug> --yes   # remove from the website (local files untouched)
+```
+
+One-time setup:
+
+1. Vercel dashboard -> your project -> **Storage** -> create a **Blob** store with **Public** access and
+   connect it to the project (this adds `BLOB_READ_WRITE_TOKEN` to the project's environment).
+2. Copy that token into your local `.env` as `BLOB_READ_WRITE_TOKEN=...` (`.env` is git-ignored).
+3. Deploy the site so `api/library.js` and `api/course-file.js` are live.
+
+The site reads `/api/library`, which fetches `library/catalog.json` from the store. If the publish command
+prints a `LIBRARY_CATALOG_URL` note, add that variable to the Vercel project and redeploy.
+
 ## Project layout
 
 ```

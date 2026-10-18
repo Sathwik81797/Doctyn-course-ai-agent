@@ -5,6 +5,8 @@ import { PipelineError } from "./errors.js";
 export const PROJECT_ROOT = path.resolve(import.meta.dirname, "..", "..");
 
 dotenv.config({ path: path.join(PROJECT_ROOT, ".env"), quiet: true });
+// Vercel CLI (`vercel env pull`) writes VERCEL_OIDC_TOKEN here; existing values from .env win.
+dotenv.config({ path: path.join(PROJECT_ROOT, ".env.local"), quiet: true });
 
 /**
  * Convert a path that may be written Git Bash style (/c/Program Files/...)

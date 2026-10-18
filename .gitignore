@@ -10,3 +10,4 @@ models/
 
 .vercel
 input/.replaced/
+.env*

@@ -21,6 +21,7 @@ const state = {
   selected: { pptx: null, docx: null },
   uploading: false,
   courses: [],
+  published: null,
 };
 
 // ---------- small helpers ----------
@@ -261,6 +262,22 @@ async function refreshLibrary() {
   renderLibrary(data.courses);
 }
 
+async function refreshPublished() {
+  const box = $("published");
+  const message = (text) => box.replaceChildren(el("div", { class: "empty" }, el("p", { text })));
+  try {
+    const res = await fetch("/api/library", { headers: { Accept: "application/json" } });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) throw new Error("unavailable");
+    state.published = data.courses;
+    if (!data.configured) message("The video library is not connected to storage yet. Connect a Vercel Blob store, then publish a course.");
+    else if (!data.courses.length) message("No courses have been published yet.");
+    else box.replaceChildren(...data.courses.map((c) => videoCard(publishedItem(c), false)));
+  } catch {
+    message("The published video library could not be loaded. It is served by the deployed website, not by the local engine.");
+  }
+}
+
 async function refreshPreviews() {
   const data = await api("/api/previews");
   renderPreviews(data.previews);
@@ -482,7 +499,7 @@ async function cancelJob() {
 function renderLibrary(courses) {
   const grid = $("library");
   if (!courses) {
-    grid.replaceChildren(el("div", { class: "empty" }, el("p", { text: "Connect the local engine to see generated videos." })));
+    grid.replaceChildren(el("div", { class: "empty" }, el("p", { text: "Connect the local engine to see courses on this computer." })));
     return;
   }
   if (!courses.length) {
@@ -490,18 +507,41 @@ function renderLibrary(courses) {
     return;
   }
   const buildingSlug = state.job && state.job.status === "running" && state.job.kind === "build-course" ? state.job.courseSlug : null;
-  grid.replaceChildren(...courses.map((c) => videoCard(c, c.slug === buildingSlug)));
+  grid.replaceChildren(...courses.map((c) => videoCard(localItem(c), c.slug === buildingSlug)));
+}
+
+// Both libraries render from one shape: { origin, title, slug, slideCount, durationSeconds, builtAt, builtLabel, status, tts,
+// files: { video|thumbnail|vtt|srt|transcript: { url, downloadUrl, bytes } } }.
+function localItem(c) {
+  const version = c.generatedAt || c.updatedAt || "";
+  const files = {};
+  for (const [key, rel] of [["video", "final-video.mp4"], ["thumbnail", "thumbnail.jpg"], ["vtt", "captions.vtt"], ["srt", "captions.srt"], ["transcript", "transcript.txt"]]) {
+    if (c.files[key]) files[key] = { url: mediaUrl(c.slug, rel, { version }), downloadUrl: mediaUrl(c.slug, rel, { download: true }), bytes: c.files[key].bytes };
+  }
+  return { origin: "local", title: c.title, slug: c.slug, slideCount: c.slideCount, durationSeconds: c.durationSeconds, builtAt: c.generatedAt || c.updatedAt, builtLabel: c.generatedAt ? "Built" : "Updated", status: c.status, tts: c.tts, files };
+}
+
+function publishedItem(c) {
+  const v = encodeURIComponent(c.publishedAt || c.generatedAt || "");
+  const text = (file) => `/api/course-file?slug=${encodeURIComponent(c.slug)}&file=${file}`;
+  const files = {};
+  for (const key of ["video", "thumbnail"]) {
+    if (c.files[key]) files[key] = { url: `${c.files[key].url}?v=${v}`, downloadUrl: `${c.files[key].url}?download=1`, bytes: c.files[key].bytes };
+  }
+  for (const key of ["vtt", "srt", "transcript"]) {
+    if (c.files[key]) files[key] = { url: text(key), downloadUrl: `${text(key)}&download=1`, bytes: c.files[key].bytes };
+  }
+  return { origin: "published", title: c.title, slug: c.slug, slideCount: c.slideCount, durationSeconds: c.durationSeconds, builtAt: c.publishedAt || c.generatedAt, builtLabel: "Published", status: "complete", tts: null, files };
 }
 
 function videoCard(c, building) {
-  const version = c.generatedAt || c.updatedAt || "";
   const playable = Boolean(c.files.video);
   const statusText = building ? "Building…" : c.status === "complete" ? "Complete" : c.status === "failed" ? "Failed validation" : "Incomplete";
   const badgeClass = building ? "badge" : `badge badge-${c.status}`;
 
   const thumb = el("button", { class: "thumb", type: "button", disabled: !playable, "aria-label": playable ? `Play ${c.title}` : `${c.title} has no video yet`, onclick: () => openPlayer(c) },
     c.files.thumbnail
-      ? el("img", { src: mediaUrl(c.slug, "thumbnail.jpg", { version }), alt: "", loading: "lazy", width: "1280", height: "720" })
+      ? el("img", { src: c.files.thumbnail.url, alt: "", loading: "lazy", width: "1280", height: "720" })
       : el("span", { class: "noimg", text: "No thumbnail yet" }),
     playable ? el("span", { class: "play", "aria-hidden": "true" }, svgPlay()) : null,
     c.durationSeconds ? el("span", { class: "duration", text: formatClock(c.durationSeconds) }) : null,
@@ -511,8 +551,7 @@ function videoCard(c, building) {
   if (c.slideCount) meta.push(`${c.slideCount} slides`);
   if (c.durationSeconds) meta.push(formatDuration(c.durationSeconds));
   if (c.files.video) meta.push(formatBytes(c.files.video.bytes));
-  if (c.generatedAt) meta.push(`Built ${timeAgo(c.generatedAt)}`);
-  else if (c.updatedAt) meta.push(`Updated ${timeAgo(c.updatedAt)}`);
+  if (c.builtAt) meta.push(`${c.builtLabel} ${timeAgo(c.builtAt)}`);
 
   return el("article", { class: "video-card" },
     thumb,
@@ -530,7 +569,7 @@ function videoCard(c, building) {
 
 function downloadLinks(c) {
   const links = [
-    ["video", "final-video.mp4", "MP4"],
+    ["video", "final-video.mp4", "Download MP4"],
     ["vtt", "captions.vtt", "VTT"],
     ["srt", "captions.srt", "SRT"],
     ["transcript", "transcript.txt", "Transcript"],
@@ -538,7 +577,7 @@ function downloadLinks(c) {
   return links
     .filter(([key]) => c.files[key])
     .map(([key, file, label]) =>
-      el("a", { class: "btn btn-ghost small", href: mediaUrl(c.slug, file, { download: true }), download: `${c.slug}-${file}`, title: `Download ${file} (${formatBytes(c.files[key].bytes)})` }, `↓ ${label}`));
+      el("a", { class: "btn btn-ghost small", href: c.files[key].downloadUrl, download: `${c.slug}-${file}`, title: `Download ${file} (${formatBytes(c.files[key].bytes)})` }, `↓ ${label}`));
 }
 
 function svgPlay() {
@@ -557,16 +596,18 @@ function svgPlay() {
 function openPlayer(c) {
   if (!c.files.video) return;
   const video = $("player-video");
-  const version = c.generatedAt || c.updatedAt || "";
   video.replaceChildren();
-  video.src = mediaUrl(c.slug, "final-video.mp4", { version });
-  if (c.files.thumbnail) video.poster = mediaUrl(c.slug, "thumbnail.jpg", { version });
+  // Published captions are served from this site; local ones come from the engine and need CORS.
+  if (c.origin === "local") video.setAttribute("crossorigin", "anonymous");
+  else video.removeAttribute("crossorigin");
+  video.src = c.files.video.url;
+  if (c.files.thumbnail) video.poster = c.files.thumbnail.url;
   else video.removeAttribute("poster");
   if (c.files.vtt) {
-    video.append(el("track", { kind: "captions", label: "English", srclang: "en", src: mediaUrl(c.slug, "captions.vtt", { version }), default: true }));
+    video.append(el("track", { kind: "captions", label: "English", srclang: "en", src: c.files.vtt.url, default: true }));
   }
   $("player-title").textContent = c.title;
-  $("player-meta").textContent = [c.slideCount && `${c.slideCount} slides`, c.durationSeconds && formatDuration(c.durationSeconds), c.generatedAt && `built ${fullDate(c.generatedAt)}`, c.status !== "complete" && "last build did not pass final validation"]
+  $("player-meta").textContent = [c.slideCount && `${c.slideCount} slides`, c.durationSeconds && formatDuration(c.durationSeconds), c.builtAt && `${c.builtLabel.toLowerCase()} ${fullDate(c.builtAt)}`, c.status !== "complete" && "last build did not pass final validation"]
     .filter(Boolean).join(" · ");
   $("player-downloads").replaceChildren(...downloadLinks(c));
   $("player").showModal();
@@ -678,6 +719,7 @@ function boot() {
   document.querySelectorAll("[data-job]").forEach((b) => b.addEventListener("click", () => startJob(b.dataset.job)));
   $("cancel-btn").addEventListener("click", cancelJob);
   $("refresh-btn").addEventListener("click", () => (state.online ? refreshAll() : checkHealth()));
+  $("published-refresh-btn").addEventListener("click", () => refreshPublished());
   $("banner-retry").addEventListener("click", () => connect().then(scheduleHealth));
   $("player-close").addEventListener("click", closePlayer);
   $("player").addEventListener("cancel", (e) => {
@@ -688,6 +730,7 @@ function boot() {
   $("banner-api").textContent = state.api;
   $("footer-api").textContent = state.api;
   updateControls();
+  refreshPublished();
   connect().then(scheduleHealth);
   // Keep relative times fresh.
   setInterval(() => state.online && !document.hidden && refreshActivity().catch(() => {}), 30000);

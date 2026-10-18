@@ -188,15 +188,26 @@
       </section>
     </aside>
 
+    <section class="card library" aria-labelledby="published-title">
+      <div class="card-head">
+        <div>
+          <h2 id="published-title">Generated videos</h2>
+          <p class="muted">Completed courses published to the Doctyn video library. Watch with captions or download the MP4.</p>
+        </div>
+        <button type="button" class="btn btn-ghost" id="published-refresh-btn">Refresh</button>
+      </div>
+      <div class="grid" id="published"><div class="empty"><p>Loading the video library…</p></div></div>
+    </section>
+
     <section class="card library" aria-labelledby="library-title">
       <div class="card-head">
         <div>
-          <h2 id="library-title">Generated videos</h2>
-          <p class="muted">Courses found in the local <code>output/</code> folder.</p>
+          <h2 id="library-title">On this computer</h2>
+          <p class="muted">Courses found in the local <code>output/</code> folder. Only you can see these until you publish them with <code>npm run publish-course</code>.</p>
         </div>
         <button type="button" class="btn btn-ghost" id="refresh-btn">Refresh</button>
       </div>
-      <div class="grid" id="library"><div class="empty"><p>Connect the local engine to see generated videos.</p></div></div>
+      <div class="grid" id="library"><div class="empty"><p>Connect the local engine to see courses on this computer.</p></div></div>
     </section>
   </main>
 
