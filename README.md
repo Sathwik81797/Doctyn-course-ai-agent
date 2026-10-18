@@ -270,6 +270,31 @@ spoken. Disable with `TTS_NORMALIZE_MEDICAL=false`.
 | `FFmpeg was not found` | `winget install Gyan.FFmpeg`, restart Git Bash, or set `FFMPEG_PATH` |
 | `The … folder is not writable` | Pause OneDrive sync or close the video player holding the file |
 
+## Web dashboard
+
+A browser dashboard (upload, validate, voice preview, generate, live progress, video
+library with playback and downloads) runs on top of the same CLI scripts.
+
+```bash
+npm run dashboard        # local engine + dashboard at http://127.0.0.1:8787
+```
+
+- **The engine (`src/dashboard.ts`) runs on your computer.** Kokoro, LibreOffice and
+  FFmpeg never run on Vercel. It listens on `127.0.0.1` only, runs one job at a time,
+  and keeps history and logs in `output/.dashboard/`.
+- **The UI (`public/`) is static** and can be hosted on Vercel. The page then calls
+  the engine at `http://127.0.0.1:8787` from your browser. Chrome may ask to allow
+  access to local network devices — allow it. If the engine is not running, the page
+  says so and disables every action; it never shows placeholder videos.
+- Uploading a PPTX/DOCX moves the previous file of that type to `input/.replaced/<time>/`.
+- Allowed web origins: `https://doctyn-course-ai-agent.vercel.app` and its preview
+  deployments. Add others (a custom domain) with
+  `DASHBOARD_ALLOWED_ORIGINS=https://studio.example.com` in `.env`. Port: `DASHBOARD_PORT`.
+- Builds started from the terminal (`npm run build-course`) are not tracked live in the
+  dashboard, but their finished videos appear in the library.
+
+Tests: `npm test` (dashboard server and progress parsing).
+
 ## Project layout
 
 ```
@@ -277,6 +302,8 @@ src/
 ├── build-course.ts         full pipeline (npm run build-course)
 ├── validate.ts             mapping check   (npm run validate)
 ├── test-services.ts        environment check (npm run test-services)
+├── dashboard.ts            local web dashboard engine (npm run dashboard)
+├── server/                 dashboard HTTP API, job runner, progress parsing, library
 ├── services/
 │   ├── inputs.ts           find the one PPTX + one DOCX, ignore ~$ files
 │   ├── parse-pptx.ts       slide count/order/titles from the PPTX ZIP/XML
@@ -289,6 +316,8 @@ src/
 │   ├── video.ts            ffprobe, per-slide segments, final concat
 │   └── captions.ts         VTT / SRT / transcript
 └── utils/                  config (.env), checkpoint, exec, tool discovery, files, slug, log, errors
+public/                     static dashboard UI (deployed to Vercel)
+test/                       npm test
 ```
 
 Type-check: `npx tsc --noEmit` (or `npm run typecheck`).
